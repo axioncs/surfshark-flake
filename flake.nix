@@ -22,8 +22,9 @@
       in
       {
         packages = rec {
-          default = surfshark;
-          surfshark = pkgs.callPackage ./package.nix { };
+          default = fhs;
+          surfshark-unwrapped = pkgs.callPackage ./package.nix { };
+          fhs = pkgs.callPackage ./fhs.nix { inherit (self.packages.${system}) surfshark-unwrapped; };
         };
 
         apps.default = {
@@ -46,7 +47,8 @@
         }:
         let
           cfg = config.services.surfshark-vpn;
-          pkg = pkgs.callPackage ./package.nix { };
+          surfshark-unwrapped = pkgs.callPackage ./package.nix { };
+          pkg = pkgs.callPackage ./fhs.nix { inherit surfshark-unwrapped; };
         in
         {
           options.services.surfshark-vpn = {
@@ -76,7 +78,7 @@
             # line up; this module ships the wrapper but you should
             # confirm surfshark launches cleanly.
             security.wrappers.chrome-sandbox = {
-              source = "${pkg}/opt/Surfshark/chrome-sandbox";
+              source = "${surfshark-unwrapped}/opt/Surfshark/chrome-sandbox";
               owner = "root";
               group = "root";
               capabilities = "cap_sys_admin+ep";
@@ -85,16 +87,24 @@
             systemd.services.surfsharkd2 = {
               description = "Surfshark Daemon2";
               wantedBy = [ "multi-user.target" ];
-              # The daemon shells out to id/ps/which at runtime, which
-              # aren't on PATH by default under systemd -- same fix as
-              # the wrapped GUI binary.
+              # The daemon shells out to id/ps/which at runtime.
+              # UNVERIFIED: at least one call elsewhere in this
+              # codebase (the GUI's PID-1 check) hardcodes
+              # execSync(cmd, {env: {PATH: '/usr/bin:/bin'}}), which
+              # discards inherited PATH entirely and would make this
+              # `path =` addition useless for that specific call,
+              # since /usr/bin and /bin don't exist on NixOS. We have
+              # not traced whether surfsharkd2.js contains the same
+              # pattern -- if the daemon fails the same way the GUI
+              # did, it needs the same buildFHSEnv treatment as
+              # fhs.nix, not more PATH entries here.
               path = with pkgs; [
                 coreutils
                 procps
                 which
               ];
               serviceConfig = {
-                ExecStart = "${pkgs.gjs}/bin/gjs ${pkg}/opt/Surfshark/resources/dist/resources/surfsharkd2.js";
+                ExecStart = "${pkgs.gjs}/bin/gjs ${surfshark-unwrapped}/opt/Surfshark/resources/dist/resources/surfsharkd2.js";
                 Restart = "on-failure";
                 RestartSec = 5;
                 IPAddressDeny = "any";
@@ -108,13 +118,15 @@
             systemd.user.services.surfsharkd = {
               description = "Surfshark Daemon";
               wantedBy = [ "default.target" ];
+              # Same caveat as surfsharkd2 above -- unverified whether
+              # this file has the same hardcoded-PATH execSync pattern.
               path = with pkgs; [
                 coreutils
                 procps
                 which
               ];
               serviceConfig = {
-                ExecStart = "${pkgs.gjs}/bin/gjs ${pkg}/opt/Surfshark/resources/dist/resources/surfsharkd.js";
+                ExecStart = "${pkgs.gjs}/bin/gjs ${surfshark-unwrapped}/opt/Surfshark/resources/dist/resources/surfsharkd.js";
                 Restart = "on-failure";
                 RestartSec = 5;
                 IPAddressDeny = "any";

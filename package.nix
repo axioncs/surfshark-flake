@@ -135,10 +135,17 @@ stdenv.mkDerivation {
     # NixOS module re-wraps it. autoPatchelfHook has already patched
     # RPATHs on all ELF binaries under $out by this point.
     #
-    # The app also shells out to id/ps/which at runtime (seen from
-    # "command not found" errors when launched with a bare PATH) --
-    # these are always present on a normal distro so upstream never
-    # declared them as deps, but NixOS provides no implicit PATH.
+    # NOTE: the app hardcodes execSync(..., {env: {PATH: '/usr/bin:/bin'}})
+    # for at least one call (checking PID 1 via `ps`), which completely
+    # replaces the environment rather than merging with it -- no
+    # wrapProgram PATH prefix can ever reach that call, since the app
+    # discards the inherited environment outright. Confirmed by
+    # extracting app.asar and reading the call site directly. The real
+    # fix lives in fhs.nix, which gives the app a real /usr/bin and
+    # /bin to find things in, rather than trying to make it respect
+    # PATH. This wrapProgram now only helps commands that DO respect
+    # inherited PATH (most of gjs's own invocations, the systemd
+    # daemons run outside the FHS wrapper).
     wrapProgram "$out/bin/surfshark" \
       --prefix PATH : "${
         lib.makeBinPath [
