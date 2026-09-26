@@ -85,6 +85,14 @@
             systemd.services.surfsharkd2 = {
               description = "Surfshark Daemon2";
               wantedBy = [ "multi-user.target" ];
+              # The daemon shells out to id/ps/which at runtime, which
+              # aren't on PATH by default under systemd -- same fix as
+              # the wrapped GUI binary.
+              path = with pkgs; [
+                coreutils
+                procps
+                which
+              ];
               serviceConfig = {
                 ExecStart = "${pkgs.gjs}/bin/gjs ${pkg}/opt/Surfshark/resources/dist/resources/surfsharkd2.js";
                 Restart = "on-failure";
@@ -100,6 +108,11 @@
             systemd.user.services.surfsharkd = {
               description = "Surfshark Daemon";
               wantedBy = [ "default.target" ];
+              path = with pkgs; [
+                coreutils
+                procps
+                which
+              ];
               serviceConfig = {
                 ExecStart = "${pkgs.gjs}/bin/gjs ${pkg}/opt/Surfshark/resources/dist/resources/surfsharkd.js";
                 Restart = "on-failure";

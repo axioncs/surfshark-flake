@@ -25,6 +25,9 @@
   alsa-lib,
   libglvnd,
   gjs,
+  coreutils,
+  procps,
+  which,
 }:
 
 let
@@ -131,8 +134,20 @@ stdenv.mkDerivation {
     # which the Nix store cannot provide -- security.wrappers in the
     # NixOS module re-wraps it. autoPatchelfHook has already patched
     # RPATHs on all ELF binaries under $out by this point.
+    #
+    # The app also shells out to id/ps/which at runtime (seen from
+    # "command not found" errors when launched with a bare PATH) --
+    # these are always present on a normal distro so upstream never
+    # declared them as deps, but NixOS provides no implicit PATH.
     wrapProgram "$out/bin/surfshark" \
-      --prefix PATH : "${lib.makeBinPath [ gjs ]}"
+      --prefix PATH : "${
+        lib.makeBinPath [
+          gjs
+          coreutils
+          procps
+          which
+        ]
+      }"
   '';
 
   meta = {
