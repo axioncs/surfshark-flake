@@ -199,7 +199,6 @@
               source = "${pkg}/opt/Surfshark/chrome-sandbox";
               owner = "root";
               group = "root";
-              setuid = true;
               capabilities = "cap_sys_admin+ep";
             };
 
