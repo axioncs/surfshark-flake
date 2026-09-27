@@ -84,6 +84,32 @@
               capabilities = "cap_sys_admin+ep";
             };
 
+            # The daemons (surfsharkd/surfsharkd2) spawn `ps` via
+            # GLib.spawn with what looks like the same
+            # explicit-environment pattern as the GUI's hardcoded
+            # execSync(..., {env: {PATH: '/usr/bin:/bin'}}) call --
+            # confirmed by "GLib.SpawnError: Failed to execute child
+            # process 'ps' (No such file or directory)" in the
+            # journal even with `path = [ ... procps ... ]` set on
+            # the systemd unit. Non-fatal (daemon keeps running), but
+            # The daemons (surfsharkd/surfsharkd2) spawn `ps` via
+            # GLib.spawn with what looks like the same
+            # explicit-environment pattern as the GUI's hardcoded
+            # execSync(..., {env: {PATH: '/usr/bin:/bin'}}) call --
+            # confirmed by "GLib.SpawnError: Failed to execute child
+            # process 'ps' (No such file or directory)" in the
+            # journal even with `path = [ ... procps ... ]` set on
+            # the systemd unit. This is NON-FATAL: the daemon logs it
+            # and keeps running (confirmed in testing), so we are
+            # deliberately NOT creating /usr/bin or /bin system-wide
+            # to chase it -- that would change filesystem layout for
+            # the whole machine over one handled, non-blocking error.
+            # If this later turns out to matter (e.g. a feature that
+            # depends on this ps call silently not working), the fix
+            # is the same class as fhs.nix: wrap the daemon's ExecStart
+            # in a small script that runs it inside a scoped
+            # buildFHSEnv, not a system-wide /usr/bin.
+
             systemd.services.surfsharkd2 = {
               description = "Surfshark Daemon2";
               wantedBy = [ "multi-user.target" ];
