@@ -39,10 +39,6 @@
 let
   info = builtins.fromJSON (builtins.readFile ./version.json);
 
-  # Full Electron/Chromium runtime deps, read from `readelf -d` against
-  # the real `surfshark` binary. This is NOT a CLI tool -- it's
-  # Electron, so it needs the same library set as any Electron app
-  # packaged for Nix.
   electronLibs = [
     glib
     nss
@@ -88,10 +84,6 @@ stdenv.mkDerivation {
 
   buildInputs = electronLibs ++ [ gjs ];
 
-  # surfsharkd/surfsharkd2 are GJS scripts (#!/usr/bin/gjs), not Node --
-  # autoPatchelfHook only touches ELF binaries so this doesn't affect
-  # them, but gjs must be on PATH at runtime for the systemd units to
-  # exec them directly.
 
   unpackPhase = ''
     runHook preUnpack
@@ -110,8 +102,6 @@ stdenv.mkDerivation {
     mkdir -p "$out/opt"
     cp -r opt/Surfshark "$out/opt/Surfshark"
 
-    # the .deb's own postinst prints this reminder rather than doing it
-    # itself -- replicate the permission fixes here.
     chmod 750 "$out/etc/openvpn/client" || true
     chmod 4755 "$out/opt/Surfshark/chrome-sandbox" || true
     chmod 755 "$out/opt/Surfshark/resources/dist/resources/surfsharkd.js" || true
@@ -119,16 +109,9 @@ stdenv.mkDerivation {
     chmod 755 "$out/opt/Surfshark/resources/dist/resources/update" || true
     chmod 755 "$out/opt/Surfshark/resources/dist/resources/diagnostics" || true
 
-    # /usr/bin/surfshark -> /opt/Surfshark/surfshark symlink, but
-    # pointed at $out instead of the FHS /opt path
     mkdir -p "$out/bin"
     ln -sf "$out/opt/Surfshark/surfshark" "$out/bin/surfshark"
 
-    # etc/ (openvpn client cert/key, init.d scripts) is reference
-    # material only -- the NixOS module wires the real systemd units,
-    # not these SysV init scripts, and the OpenVPN cert/key are
-    # consumed via NetworkManager instead of copied into /etc directly
-    # from here.
     mkdir -p "$out/share/surfshark-vpn-config"
     cp -r etc/openvpn "$out/share/surfshark-vpn-config/"
 
@@ -136,22 +119,6 @@ stdenv.mkDerivation {
   '';
 
   postFixup = ''
-    # chrome-sandbox needs real privilege (setuid or capabilities),
-    # which the Nix store cannot provide -- security.wrappers in the
-    # NixOS module re-wraps it. autoPatchelfHook has already patched
-    # RPATHs on all ELF binaries under $out by this point.
-    #
-    # NOTE: the app hardcodes execSync(..., {env: {PATH: '/usr/bin:/bin'}})
-    # for at least one call (checking PID 1 via `ps`), which completely
-    # replaces the environment rather than merging with it -- no
-    # wrapProgram PATH prefix can ever reach that call, since the app
-    # discards the inherited environment outright. Confirmed by
-    # extracting app.asar and reading the call site directly. The real
-    # fix lives in fhs.nix, which gives the app a real /usr/bin and
-    # /bin to find things in, rather than trying to make it respect
-    # PATH. This wrapProgram now only helps commands that DO respect
-    # inherited PATH (most of gjs's own invocations, the systemd
-    # daemons run outside the FHS wrapper).
     wrapProgram "$out/bin/surfshark" \
       --prefix PATH : "${
         lib.makeBinPath [

@@ -20,8 +20,6 @@ if ! curl -fsSL -o "$tmp_packages" "$PACKAGES_URL"; then
   exit 1
 fi
 
-# Packages files are RFC822-style stanzas separated by blank lines.
-# Pull out the `surfshark` stanza specifically -- NOT `surfshark-vpn`.
 block=$(awk -v RS='' '/^Package: surfshark$/' "$tmp_packages")
 
 if [ -z "$block" ]; then
