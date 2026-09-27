@@ -17,7 +17,13 @@
   cairo,
   gtk3,
   pango,
-  xorg,
+  libx11,
+  libxcomposite,
+  libxdamage,
+  libxext,
+  libxfixes,
+  libxrandr,
+  libxcb,
   mesa,
   expat,
   libxkbcommon,
@@ -49,15 +55,15 @@ let
     cairo
     gtk3
     pango
-    xorg.libX11
-    xorg.libXcomposite
-    xorg.libXdamage
-    xorg.libXext
-    xorg.libXfixes
-    xorg.libXrandr
+    libx11
+    libxcomposite
+    libxdamage
+    libxext
+    libxfixes
+    libxrandr
     mesa # libgbm
     expat
-    xorg.libxcb
+    libxcb
     libxkbcommon
     udev
     alsa-lib

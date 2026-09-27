@@ -103,6 +103,18 @@
                 procps
                 which
               ];
+              # surfsharkd/surfsharkd2 use GJS's GObject-Introspection
+              # binding to talk to libnm (NetworkManager) directly --
+              # confirmed via the runtime error "Requiring NM, version
+              # none: Typelib file for namespace 'NM' (any version)
+              # not found" in surfsharkd's journal. GI_TYPELIB_PATH
+              # and LD_LIBRARY_PATH aren't populated automatically by
+              # networking.networkmanager.enable; GJS needs them set
+              # explicitly per-process.
+              environment = {
+                GI_TYPELIB_PATH = "${pkgs.networkmanager}/lib/girepository-1.0";
+                LD_LIBRARY_PATH = "${pkgs.networkmanager}/lib";
+              };
               serviceConfig = {
                 ExecStart = "${pkgs.gjs}/bin/gjs ${surfshark-unwrapped}/opt/Surfshark/resources/dist/resources/surfsharkd2.js";
                 Restart = "on-failure";
@@ -125,6 +137,14 @@
                 procps
                 which
               ];
+              # See surfsharkd2's comment above -- this is the daemon
+              # actually observed crash-looping with the NM typelib
+              # error. As a user-scope service it especially can't be
+              # expected to inherit GI_TYPELIB_PATH from anywhere.
+              environment = {
+                GI_TYPELIB_PATH = "${pkgs.networkmanager}/lib/girepository-1.0";
+                LD_LIBRARY_PATH = "${pkgs.networkmanager}/lib";
+              };
               serviceConfig = {
                 ExecStart = "${pkgs.gjs}/bin/gjs ${surfshark-unwrapped}/opt/Surfshark/resources/dist/resources/surfsharkd.js";
                 Restart = "on-failure";
