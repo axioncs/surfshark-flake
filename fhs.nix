@@ -6,6 +6,7 @@
   which,
   gjs,
   bash,
+  iputils,
 }:
 
 # Surfshark's Electron app hardcodes execSync(cmd, {env: {PATH:
@@ -39,6 +40,7 @@ buildFHSEnv {
       which
       gjs
       bash
+      iputils
     ];
 
   # This is the part that actually fixes the crash: buildFHSEnv
