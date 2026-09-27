@@ -22,8 +22,16 @@
       in
       {
         packages = rec {
-          default = fhs;
+          default = surfshark-unwrapped;
           surfshark-unwrapped = pkgs.callPackage ./package.nix { };
+          # fhs.nix is kept in the repo but not used by default --
+          # it fixed a real but secondary issue (the GUI's own
+          # execSync('ps 1 -o comm=', {env:{PATH:'/usr/bin:/bin'}})
+          # startup check), not the actual crash loop, which was
+          # surfsharkd's missing GI_TYPELIB_PATH for libnm (see the
+          # NixOS module below). Reintroducing /usr/bin, /bin-style
+          # paths is undesirable on NixOS unless proven necessary --
+          # testing without it first now that the daemon is healthy.
           fhs = pkgs.callPackage ./fhs.nix { inherit (self.packages.${system}) surfshark-unwrapped; };
         };
 
@@ -48,7 +56,15 @@
         let
           cfg = config.services.surfshark-vpn;
           surfshark-unwrapped = pkgs.callPackage ./package.nix { };
-          pkg = pkgs.callPackage ./fhs.nix { inherit surfshark-unwrapped; };
+          # Reverted from fhs.nix back to the plain unwrapped package
+          # for testing -- see packages.default's comment above. The
+          # GUI still gets a normal wrapProgram PATH (coreutils/procps/
+          # which/gjs) from package.nix's own postFixup, which covers
+          # any call that DOES respect inherited PATH; only the one
+          # hardcoded execSync call is unaffected by that, and it's
+          # unclear whether it's fatal to the GUI actually opening a
+          # window or just a background capability check.
+          pkg = surfshark-unwrapped;
         in
         {
           options.services.surfshark-vpn = {
