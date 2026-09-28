@@ -1,81 +1,72 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
-REPO_BASE="https://ocean.surfshark.com/debian"
-DIST="stable"
-COMPONENT="main"
-ARCH="amd64"
+AUR_PKG="${AUR_PKG:-surfshark-client}"
+POOL_URL="https://ocean.surfshark.com/debian/pool/main/s"
 FILE="version.json"
+MIN_BYTES=5000000
 
-PACKAGES_URL="${REPO_BASE}/dists/${DIST}/${COMPONENT}/binary-${ARCH}/Packages"
+die() { echo "::error::update.sh: $*" >&2; exit 1; }
+log() { echo "update.sh: $*" >&2; }
 
-tmp_packages=$(mktemp)
-tmp_deb=$(mktemp --suffix=.deb)
-trap 'rm -f "$tmp_packages" "$tmp_deb"' EXIT
+command -v jq   >/dev/null || die "jq not found"
+command -v nix  >/dev/null || die "nix not found"
+[ -f "$FILE" ]             || die "$FILE missing (run from repo root)"
 
-if ! curl -fsSL -o "$tmp_packages" "$PACKAGES_URL"; then
-  echo "failed to fetch Packages index from $PACKAGES_URL" >&2
-  echo "fall back to: curl -fsSL -o pkg.deb <url from mirror/forum post> and hash it manually" >&2
-  exit 1
-fi
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 
-block=$(awk -v RS='' '/^Package: surfshark$/' "$tmp_packages")
+cur=$(jq -er '.version' "$FILE") || die "cannot read .version from $FILE"
 
-if [ -z "$block" ]; then
-  echo "no 'surfshark' stanza found in Packages index" >&2
-  echo "(if the package was renamed again, check pool/main/s/ listing directly)" >&2
-  exit 1
-fi
+# --- version from AUR ---
+json=$(curl -fsSL --retry 3 --retry-delay 2 \
+  "https://aur.archlinux.org/rpc/v5/info?arg[]=${AUR_PKG}") \
+  || die "AUR RPC request failed"
 
-version=$(awk -F': ' '/^Version:/ {print $2; exit}' <<<"$block")
-filename=$(awk -F': ' '/^Filename:/ {print $2; exit}' <<<"$block")
+count=$(jq -r '.resultcount' <<<"$json")
+[ "$count" = "1" ] || die "AUR returned resultcount=$count for '${AUR_PKG}' (package renamed or removed?)"
 
-if [ -z "$version" ] || [ -z "$filename" ]; then
-  echo "could not parse Version/Filename from Packages stanza" >&2
-  exit 1
-fi
+raw=$(jq -r '.results[0].Version // empty' <<<"$json")
+[ -n "$raw" ] || die "AUR result has no Version field"
 
-url="${REPO_BASE}/${filename}"
+ver="${raw#*:}"   # strip epoch
+ver="${ver%-*}"   # strip pkgrel
+[[ "$ver" =~ ^[0-9]+(\.[0-9]+)+$ ]] || die "unexpected AUR version format: '$raw' -> '$ver'"
 
-current_version=$(jq -r '.version' "$FILE")
-if [ "$version" = "$current_version" ]; then
-  echo "already up to date ($version)"
+log "AUR: $raw -> $ver (current: $cur)"
+
+if [ "$ver" = "$cur" ]; then
+  log "already up to date"
   exit 0
 fi
 
-echo "update: $current_version -> $version"
-
-if ! curl -fsSL -o "$tmp_deb" "$url"; then
-  echo "failed to download $url" >&2
-  exit 1
+newest=$(printf '%s\n%s\n' "$cur" "$ver" | sort -V | tail -n1)
+if [ "$newest" != "$ver" ]; then
+  log "AUR version $ver is older than current $cur; not downgrading"
+  exit 0
 fi
 
-if [ ! -s "$tmp_deb" ] || [ "$(stat -c %s "$tmp_deb")" -lt 5000000 ]; then
-  echo "downloaded file is suspiciously small for an Electron app (<5MB)" >&2
-  exit 1
-fi
+# --- verify upstream .deb exists ---
+url="${POOL_URL}/surfshark_${ver}_amd64.deb"
+curl -fsSIL --retry 2 -o /dev/null "$url" \
+  || die "AUR says $ver but upstream .deb missing: $url (AUR ahead of upstream, or pool path changed)"
 
-hash=$(nix hash file --sri "$tmp_deb")
-if [ -z "$hash" ]; then
-  echo "failed to hash download" >&2
-  exit 1
-fi
+# --- download + validate ---
+deb="$tmp/surfshark.deb"
+curl -fsSL --retry 3 --retry-delay 2 -o "$deb" "$url" || die "download failed: $url"
 
-tmp_out=$(mktemp)
-jq --arg v "$version" --arg u "$url" --arg h "$hash" \
-  '.version = $v | .url = $u | .hash = $h' "$FILE" > "$tmp_out"
-mv "$tmp_out" "$FILE"
+size=$(stat -c %s "$deb")
+[ "$size" -ge "$MIN_BYTES" ] || die "download is ${size} bytes (<${MIN_BYTES})"
+head -c 8 "$deb" | grep -q '^!<arch>' || die "download is not a deb (ar) archive"
 
-echo "now at $version"
+hash=$(nix hash file --sri "$deb") || die "nix hash file failed"
+[ -n "$hash" ] || die "empty hash"
 
-cat <<'EOF'
+# --- write version.json ---
+jq --arg v "$ver" --arg u "$url" --arg h "$hash" \
+  '.version = $v | .url = $u | .hash = $h' "$FILE" > "$tmp/version.json"
+jq -e '.version and .url and .hash' "$tmp/version.json" >/dev/null || die "generated version.json invalid"
+mv "$tmp/version.json" "$FILE"
 
-NOTE: this script only updates version/url/hash. If the update also
-changed internal .deb layout (new daemon filenames, moved
-systemd unit paths, renamed binary), the flake.nix package
-derivation and NixOS module's systemd unit ExecStart paths will
-need manual review -- re-run the verify-layout steps (extract the
-.deb and diff `find data/usr data/opt data/etc` output) before
-trusting a green build.
-EOF
+log "updated: $cur -> $ver"
+log "NOTE: only version/url/hash changed; review flake.nix/package.nix if .deb layout changed"
