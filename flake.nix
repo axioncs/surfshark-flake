@@ -18,12 +18,15 @@
     flake-utils.lib.eachSystem systems (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
       in
       {
-        packages = {
-          default = surfshark-unwrapped;
+        packages = rec {
           surfshark-unwrapped = pkgs.callPackage ./package.nix { };
+          default = surfshark-unwrapped;
         };
 
         apps.default = {
@@ -62,7 +65,6 @@
               group = "root";
               capabilities = "cap_sys_admin+ep";
             };
-
 
             systemd.services.surfsharkd2 = {
               description = "Surfshark Daemon2";
